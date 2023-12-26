@@ -1,0 +1,90 @@
+---
+- name: Generate basic auth config
+  template:
+    src: security.json.j2
+    dest: '{{ solr_home }}/security.json'
+    owner: '{{ solr_user }}'
+    group: '{{ solr_group }}'
+    mode: 0640
+  become: true
+  when:
+    - solr_auth_configure
+    - solr_version is version('7.0.0', '>=')
+  notify:
+    - restart Solr Linux
+
+- name: restart Solr Linux
+  systemd:
+    name: '{{ solr_service_name }}'
+    state: restarted
+    daemon_reload: true
+    enabled: '{{ solr_service_autostart }}'
+  when:
+    - solr_auth_configure
+    - solr_version is version('7.0.0', '>=')
+    - solr_change_default_password
+  become: true
+
+- name: Wait for Solr is UP
+  uri:
+    url: '{{ solr_proto }}://{{ solr_host }}:{{ solr_port }}/solr'
+    status_code: 200
+    validate_certs: false
+    user: '{{ solr_default_auth_user }}'
+    password: '{{ solr_default_auth_pass }}'
+    force_basic_auth: true
+  register: solr_main_page
+  until: solr_main_page.status == 200
+  retries: 20
+  delay: 10
+  when:
+    - solr_auth_configure
+    - solr_version is version('7.0.0', '>=')
+    - solr_change_default_password
+
+- name: Create admin user via API
+  uri:
+    url: '{{ solr_proto }}://{{ solr_host }}:{{ solr_port }}/solr/admin/authentication'
+    method: POST
+    user: '{{ solr_default_auth_user }}'
+    password: '{{ solr_default_auth_pass }}'
+    validate_certs: false
+    force_basic_auth: true
+    headers:
+      Content-Type: 'application/json'
+    body_format: json
+    body: '{"set-user": {"{{ solr_auth_user }}": "{{ solr_auth_pass }}"} }'
+  when:
+    - solr_auth_configure
+    - solr_version is version('7.0.0', '>=')
+    - solr_change_default_password
+  notify:
+    - restart Solr Linux
+
+- name: Change default admin user password via API
+  uri:
+    url: '{{ solr_proto }}://{{ solr_host }}:{{ solr_port }}/solr/admin/authentication'
+    method: POST
+    user: '{{ solr_default_auth_user }}'
+    password: '{{ solr_default_auth_pass }}'
+    validate_certs: false
+    force_basic_auth: true
+    headers:
+      Content-Type: 'application/json'
+    body_format: json
+    body: '{"set-user": {"solr": "{{ solr_auth_pass }}"} }'
+  when:
+    - solr_auth_configure
+    - solr_version is version('7.0.0', '>=')
+    - solr_change_default_password
+  notify:
+    - restart Solr Linux
+
+- name: Start service
+  service:
+    name: '{{ solr_service_name }}'
+    state: started
+    enabled: true
+  become: true
+  when:
+    - solr_service_start

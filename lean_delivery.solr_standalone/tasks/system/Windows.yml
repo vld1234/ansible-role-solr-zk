@@ -1,0 +1,22 @@
+---
+- name: 'Download solr {{ solr_version }}'
+  win_get_url:
+    url: '{{ solr_distr_url }}'
+    dest: '{{ solr_win_temp_dir }}\{{ solr_version }}.zip'
+    force: false
+
+- name: 'Unzip solr {{ solr_version }}'
+  win_unzip:
+    src: '{{ solr_win_temp_dir }}\{{ solr_version }}.zip'
+    dest: '{{ solr_dest_main_path }}'
+    creates: '{{ solr_dest_path }}'
+
+- name: Set solr firewall rule
+  win_firewall_rule:
+    name: '{{ solr_service_name }}'
+    localport: '{{ solr_port }}'
+    action: allow
+    direction: in
+    protocol: tcp
+    state: present
+    enabled: true

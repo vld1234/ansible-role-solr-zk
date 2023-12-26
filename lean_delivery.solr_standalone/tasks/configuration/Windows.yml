@@ -1,0 +1,98 @@
+---
+- name: Create solr directories
+  win_file:
+    path: '{{ solr_win_dir_item }}'
+    state: directory
+  loop:
+    - '{{ solr_dest_path }}\data'
+    - '{{ solr_dest_path }}\logs'
+  loop_control:
+    loop_var: solr_win_dir_item
+
+- name: Set solr configuration file
+  win_template:
+    src: solr.in.cmd.j2
+    dest: '{{ solr_dest_path }}\bin\solr.in.cmd'
+  notify: restart Solr Windows
+
+- name: Generate basic auth config
+  win_template:
+    src: security.json.j2
+    dest: '{{ solr_dest_path }}\server\solr\security.json'
+  when:
+    - solr_auth_configure
+    - solr_version is version('7.0.0', '>=')
+  notify: restart Solr Windows
+
+- name: Install nssm package
+  win_chocolatey:
+    name: nssm
+    state: present
+
+- name: Create solr service
+  win_nssm:
+    name: '{{ solr_service_name }}'
+    application: '{{ solr_dest_path }}\bin\solr.cmd'
+    app_parameters_free_form: 'start -f'
+    state: started
+    start_mode: auto
+  # Need to remove when problem with idempotency has gone or fixed
+  changed_when: false
+
+- name: autostart Solr service
+  win_service:
+    name: '{{ solr_service_name }}'
+    start_mode: '{{ solr_service_autostart | ternary("auto", "manual") }}'
+
+- name: Wait for Solr is UP
+  win_get_url:
+    url: '{{ solr_proto }}://{{ solr_host }}:{{ solr_port }}/solr/'
+    dest: '{{ solr_win_temp_dir }}\test.html'
+    validate_certs: false
+    url_username: '{{ solr_default_auth_user }}'
+    url_password: '{{ solr_default_auth_pass }}'
+  register: solr_main_page
+  until: solr_main_page.status_code == 200
+  retries: 20
+  delay: 10
+  when:
+    - solr_auth_configure
+    - solr_version is version('7.0.0', '>=')
+    - solr_change_default_password
+
+- name: Create new admin user via API
+  win_uri:
+    url: '{{ solr_proto }}://{{ solr_host }}:{{ solr_port }}/solr/admin/authentication/'
+    method: POST
+    user: '{{ solr_default_auth_user }}'
+    password: '{{ solr_default_auth_pass }}'
+    validate_certs: false
+    headers:
+      Content-type: 'application/json'
+    body: "{'set-user': {'{{ solr_auth_user }}': '{{ solr_auth_pass }}'} }"
+  when:
+    - solr_auth_configure
+    - solr_version is version('7.0.0', '>=')
+    - solr_change_default_password
+
+- name: Change default admin user password via API
+  win_uri:
+    url: '{{ solr_proto }}://{{ solr_host }}:{{ solr_port }}/solr/admin/authentication/'
+    method: POST
+    user: '{{ solr_default_auth_user }}'
+    password: '{{ solr_default_auth_pass }}'
+    validate_certs: false
+    headers:
+      Content-type: 'application/json'
+    body: "{'set-user': {'solr': '{{ solr_auth_pass }}'} }"
+  when:
+    - solr_auth_configure
+    - solr_version is version('7.0.0', '>=')
+    - solr_change_default_password
+
+- name: start Solr Windows
+  win_service:
+    name: '{{ solr_service_name }}'
+    state: started
+  when:
+    - solr_service_start

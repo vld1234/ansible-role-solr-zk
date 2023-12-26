@@ -1,0 +1,205 @@
+---
+- name: Install requirements
+  package:
+    name: '{{ requirements }}'
+    state: present
+  register: installed_packages
+  until: installed_packages is succeeded
+  become: true
+
+- name: Check that solr group is exist
+  group:
+    name: '{{ solr_group }}'
+    state: present
+  become: true
+
+- name: Check that solr user is exist
+  user:
+    name: '{{ solr_user }}'
+    group: '{{ solr_group }}'
+    home: '{{ solr_base_path }}'
+    createhome: true
+    system: true
+    state: present
+  become: true
+
+- name: Set limits
+  pam_limits:
+    domain: '{{ solr_user }}'
+    limit_item: '{{ solr_limit.limit_item }}'
+    limit_type: '-'
+    value: '{{ solr_limit.limit_value }}'
+  loop:
+    - limit_item: nofile
+      limit_value: '{{ solr_open_files_limit }}'
+    - limit_item: nproc
+      limit_value: '{{ solr_max_processes_limit }}'
+  loop_control:
+    loop_var: solr_limit
+  when: solr_set_limits
+  become: true
+
+- name: 'Get {{ solr_checksum }} for solr {{ solr_version }}'
+  set_fact:
+    sha_value: '{{ sha_url_item }}'
+  with_url: '{{ solr_distr_url }}.{{ solr_checksum }}'
+  loop_control:
+    loop_var: sha_url_item
+
+# initial deployment of solr
+- name: 'Download solr {{ solr_version }} archive'
+  get_url:
+    url: '{{ solr_distr_url }}'
+    dest: '{{ solr_dest_path }}.zip'
+    checksum: '{{ solr_checksum }}:{{ sha_value.split(" ")[0] }}'
+  register: result
+  until: result is succeeded
+  retries: 10
+  delay: 2
+  become: true
+
+- name: 'Unarchive solr {{ solr_version }}'
+  unarchive:
+    creates: '{{ solr_dest_path }}'
+    src: '{{ solr_dest_path }}.zip'
+    dest: '{{ solr_dest_main_path }}'
+    owner: '{{ solr_user }}'
+    group: '{{ solr_group }}'
+    remote_src: true
+  become: true
+
+- name: Create symlink
+  file:
+    src: '{{ solr_dest_path }}'
+    dest: '{{ solr_dest_main_path }}/solr'
+    state: link
+    owner: '{{ solr_user }}'
+    group: '{{ solr_group }}'
+  when:
+    - solr_dest_main_path + '/solr' != solr_dest_path
+  become: true
+
+- name: Add folders
+  file:
+    path: '{{ solr_base_path }}/{{ solr_create_dirs }}'
+    owner: '{{ solr_user }}'
+    group: '{{ solr_group }}'
+    mode: 0750
+    state: directory
+  loop:
+    - data
+    - logs
+  loop_control:
+    loop_var: solr_create_dirs
+  become: true
+
+- name: Adjusting solr java heap memory and other settings
+  template:
+    src: solr.in.sh.j2
+    dest: '{{ solr_insh_default }}'
+    owner: '{{ solr_user }}'
+    group: '{{ solr_group }}'
+    mode: 0640
+  become: true
+  notify:
+    - restart Solr Linux
+
+- name: Copy data config files
+  copy:
+    src: '{{ solr_dest_path }}/server/solr/{{ solr_data_config_file }}'
+    dest: '{{ solr_home }}/{{ solr_data_config_file }}'
+    remote_src: true
+    owner: '{{ solr_user }}'
+    group: '{{ solr_group }}'
+  loop:
+    - solr.xml
+    - zoo.cfg
+  loop_control:
+    loop_var: solr_data_config_file
+  become: true
+  notify:
+    - restart Solr Linux
+
+- name: Copy log4j config file
+  copy:
+    src: >-
+      {{ solr_dest_path }}/server/resources/{{ solr_version is version("7.4.0", "<")
+      | ternary("log4j.properties","log4j2.xml") }}
+    dest: >-
+      {{ solr_base_path }}/{{ solr_version is version("7.4.0", "<")
+      | ternary("log4j.properties","log4j2.xml") }}
+    remote_src: true
+    owner: '{{ solr_user }}'
+    group: '{{ solr_group }}'
+  become: true
+  notify:
+    - restart Solr Linux
+
+- name: Install solr service
+  template:
+    src: solr.service.j2
+    dest: '/lib/systemd/system/{{ solr_service_name }}.service'
+  become: true
+  notify:
+    - restart Solr Linux
+
+- name: Solr service autostart set
+  service:
+    name: '{{ solr_service_name }}'
+    enabled: '{{ solr_service_autostart }}'
+  become: true
+
+- name: Install pip packages
+  pip:
+    name:
+      - pyOpenSSL
+    state: present
+    extra_args: --upgrade
+  register: installed_packages
+  until: installed_packages is succeeded
+  become: true
+
+- name: Get OOTB configsets
+  find:
+    paths: '{{ solr_dest_path }}/server/solr/configsets'
+    file_type: directory
+  register: default_configsets
+  when: solr_copy_default_configsets
+
+- name: Populate OOTB configset list
+  set_fact:
+    default_configsets_list: >-
+      {{ default_configsets.files | map(attribute='path')
+      | list | map('replace', solr_dest_path + '/server/solr/configsets/', '')
+      | list }}
+  when: solr_copy_default_configsets
+
+- name: Get current configsets
+  find:
+    paths: '{{ solr_home }}/configsets'
+    file_type: directory
+  register: current_configsets
+  when: solr_copy_default_configsets
+
+- name: Populate current configset list
+  set_fact:
+    current_configsets_list: >-
+      {{ current_configsets.files | map(attribute='path')
+      | list | map('replace', solr_home + '/configsets/', '') | list }}
+  when: solr_copy_default_configsets
+
+- name: Copy OOTB configsets
+  synchronize:
+    src: '{{ solr_dest_path }}/server/solr/configsets/{{ ootb_cs }}'
+    dest: '{{ solr_home }}/configsets/'
+    owner: true
+    group: true
+    recursive: true
+  loop: '{{ default_configsets_list }}'
+  loop_control:
+    loop_var: ootb_cs
+  become: true
+  delegate_to: '{{ inventory_hostname }}'
+  when:
+    - solr_copy_default_configsets
+    - ootb_cs not in current_configsets_list

@@ -1,0 +1,11 @@
+---
+- name: Converge
+  hosts: all
+  roles:
+    - role: lean_delivery.java
+    - role: ansible-role-solr-standalone
+  vars:
+    solr_change_default_password: false
+    solr_copy_default_configsets: true
+    solr_service_restart: no
+    solr_use_java_version_8: false

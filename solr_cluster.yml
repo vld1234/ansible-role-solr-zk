@@ -1,0 +1,43 @@
+#- name: Install and Configure Java
+#  hosts: zookeeper
+#  roles:
+#    - role: lean_delivery.java
+- hosts: all
+  tasks:
+    - name: Reload systemd configuration
+      systemd:
+        daemon_reload: True
+      become: True
+
+
+- name: Install and Configure Zookeeper Cluster
+  hosts: zookeeper
+  vars:
+    zk_version: 3.6.2
+  roles:
+    - role: lean_delivery.zookeeper
+      zk_root_url: "https://archive.apache.org/dist/zookeeper"
+      zk_config:
+        4lw.commands.whitelist: mntr,conf,ruok
+
+- name: Install and Configure Solr Servers without ssl and authentication
+  hosts: solr
+  vars:
+    solr_version: 8.11.2
+  roles:
+    - role: lean_delivery.solr_standalone
+      solr_url: "https://archive.apache.org/dist/lucene/solr"
+      solr_change_default_password: False
+      solr_auth_configure: False
+      solr_ssl_configure: False
+      solr_insh_default: /etc/default/solr.in.sh
+    - role: lean_delivery.solr_cloud
+      zk_inventory_group: zookeeper
+      configset_list:
+        - default
+      auto_populate_configset_list: True
+      zk_enable_ssl: False
+      solr_insh_default: /etc/default/solr.in.sh
+      default_solr_configset_path: /opt/solr/server/solr/configsets
+      configset_list:
+        - _default
