@@ -29,8 +29,3 @@ Example Inventory
  ```
 
 AWS, Java - sapmachine-jdk-17.0.9_linux-x64_bin.tar.gz
-
-License
--------
-
-Apache
