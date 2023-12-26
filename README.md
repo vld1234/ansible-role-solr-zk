@@ -14,7 +14,7 @@ Requirements
       - 7
     - Ubuntu
     - Debian
-Java installed - sapmachine-jdk-17.0.9_linux-x64_bin.tar.gz
+
 Example Inventory
 ----------------
 ```ini
@@ -27,3 +27,5 @@ Example Inventory
  zookeeper2
  zookeeper3
  ```
+
+Java installed - sapmachine-jdk-17.0.9_linux-x64_bin.tar.gz
