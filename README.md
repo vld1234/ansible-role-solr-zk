@@ -4,15 +4,16 @@ solr_version: 8.11.2
 zk_version: 3.6.2
 
 Requirements
-Minimal Version of the ansible for installation: 2.7
-Java 8 Build Status
-Zookeper cluster installed Build Status
-** Solr** standalone servers installed Build Status
-Supported OS:
-CentOS
-7
-Ubuntu
-Debian
+------------
+- Minimal Version of the ansible for installation: 2.7
+  - **Java 8** [![Build Status](https://travis-ci.org/lean-delivery/ansible-role-java.svg?branch=master)](https://travis-ci.org/lean-delivery/ansible-role-java)
+  - **Zookeper** cluster installed [![Build Status](https://travis-ci.org/lean-delivery/ansible-role-zookeeper.svg?branch=master)](https://travis-ci.org/lean-delivery/ansible-role-zookeeper)
+  - ** Solr** standalone servers installed [![Build Status](https://travis-ci.org/lean-delivery/ansible-role-solr-standalone.svg?branch=master)](https://travis-ci.org/lean-delivery/ansible-role-solr-standalone)
+  - **Supported OS**:
+    - CentOS
+      - 7
+    - Ubuntu
+    - Debian
 
 Example Inventory
 ----------------
