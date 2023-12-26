@@ -28,4 +28,4 @@ Example Inventory
  zookeeper3
  ```
 
-Java installed - sapmachine-jdk-17.0.9_linux-x64_bin.tar.gz
+AWS, Java - sapmachine-jdk-17.0.9_linux-x64_bin.tar.gz
